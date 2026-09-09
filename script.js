@@ -829,3 +829,56 @@ if ("serviceWorker" in navigator){
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+// Melhorias para mobile
+// 1. Detecta se é dispositivo móvel
+function isMobile() {
+  return window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+// 2. Evita zoom automático em inputs no iOS
+document.addEventListener('focusin', function(e) {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+    if (isMobile()) {
+      // Pequeno delay para o teclado aparecer antes de scrollar
+      setTimeout(() => {
+        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 350);
+    }
+  }
+});
+
+// 3. Ajusta padding do composer quando teclado abre (Android)
+if ('visualViewport' in window) {
+  let lastHeight = window.visualViewport.height;
+  window.visualViewport.addEventListener('resize', () => {
+    const currentHeight = window.visualViewport.height;
+    const composer = document.getElementById('composer');
+    if (composer && isMobile()) {
+      if (currentHeight < lastHeight) {
+        // Teclado abriu - mantém composer visível
+        composer.style.transform = 'translateY(0)';
+      }
+      lastHeight = currentHeight;
+    }
+  });
+}
+
+// 4. Fecha popover de emoji ao rolar (mobile)
+const messagesEl = document.getElementById('messages');
+messagesEl.addEventListener('scroll', () => {
+  const popover = document.getElementById('emoji-popover');
+  if (popover && popover.classList.contains('open')) {
+    popover.classList.remove('open');
+  }
+});
+
+// 5. Ajusta o input ao perder foco (volta ao tamanho normal)
+document.getElementById('msg-input').addEventListener('blur', function() {
+  if (isMobile()) {
+    setTimeout(() => {
+      this.style.height = 'auto';
+      window.scrollTo(0, 0);
+    }, 300);
+  }
+});
