@@ -101,13 +101,136 @@ function buildTicks(){
   return `<svg class="ticks" width="16" height="11" viewBox="0 0 16 11"><path fill="currentColor" d="M11.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.405-2.272a.463.463 0 0 0-.336-.146.47.47 0 0 0-.336.146l-.42.406a.489.489 0 0 0 0 .68l3.077 3.06c.176.176.463.176.64 0l.398-.406 6.69-8.343a.5.5 0 0 0-.084-.687l-.35-.15zM15.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-.87-.822-1.05 1.043 1.31 1.24c.176.176.463.176.64 0l.398-.406 6.69-8.343a.5.5 0 0 0-.084-.687l-.16-.14z"/></svg>`;
 }
 
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const DEFAULT_REACTION = "❤️";
+let activeReactionPicker = null;
+
+function closeReactionPicker(){
+  if (activeReactionPicker){
+    activeReactionPicker.remove();
+    activeReactionPicker = null;
+  }
+}
+document.addEventListener("click", closeReactionPicker);
+document.addEventListener("scroll", closeReactionPicker, true);
+
+// Mostra/atualiza o "chip" com o emoji escolhido no canto do balão
+function renderReactionPill(m, wrapEl){
+  const block = wrapEl.closest(".msg-block");
+  let pill = wrapEl.querySelector(".msg-reaction");
+  if (m.reaction){
+    if (!pill){
+      pill = document.createElement("div");
+      pill.className = "msg-reaction";
+      pill.title = "Remover reação";
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleReaction(m, m.reaction, wrapEl);
+      });
+      wrapEl.appendChild(pill);
+    }
+    pill.textContent = m.reaction;
+    if (block) block.classList.add("has-reaction");
+  } else if (pill){
+    pill.remove();
+    if (block) block.classList.remove("has-reaction");
+  }
+}
+
+// Define ou remove (se já for a mesma) a reação de uma mensagem
+function toggleReaction(m, emoji, wrapEl){
+  m.reaction = (m.reaction === emoji) ? null : emoji;
+  renderReactionPill(m, wrapEl);
+  closeReactionPicker();
+}
+
+// Abre o seletor de emojis próximo ao balão (usado no hover do computador e no toque longo do celular)
+function openReactionPicker(m, wrapEl){
+  if (activeReactionPicker && activeReactionPicker.dataset.for === m.id){
+    closeReactionPicker();
+    return;
+  }
+  closeReactionPicker();
+  const picker = document.createElement("div");
+  picker.className = "reaction-picker";
+  picker.dataset.for = m.id;
+  REACTION_EMOJIS.forEach(emoji => {
+    const opt = document.createElement("button");
+    opt.type = "button";
+    opt.className = "reaction-picker-opt" + (m.reaction === emoji ? " active" : "");
+    opt.textContent = emoji;
+    opt.setAttribute("aria-label", "Reagir com " + emoji);
+    opt.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleReaction(m, emoji, wrapEl);
+    });
+    picker.appendChild(opt);
+  });
+  picker.addEventListener("click", e => e.stopPropagation());
+  wrapEl.appendChild(picker);
+  activeReactionPicker = picker;
+}
+
+// Liga os gestos de reação a um balão já renderizado:
+// - Duplo toque/clique: curte com ❤️ (padrão do WhatsApp)
+// - Botão que aparece ao passar o mouse (computador): abre o seletor de emojis
+// - Toque e segure (celular): abre o seletor de emojis
+function setupReactionUI(m, wrapEl){
+  renderReactionPill(m, wrapEl);
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "react-trigger";
+  trigger.setAttribute("aria-label", "Reagir a esta mensagem");
+  trigger.title = "Reagir";
+  trigger.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM8.5 10a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm7 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM12 17.5c-2.33 0-4.31-1.46-5.11-3.5h10.22c-.8 2.04-2.78 3.5-5.11 3.5z"/></svg>`;
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openReactionPicker(m, wrapEl);
+  });
+  wrapEl.appendChild(trigger);
+
+  const bubbleEl = wrapEl.querySelector(".bubble");
+  if (!bubbleEl) return;
+
+  // Duplo clique (computador) / duplo toque (a maioria dos navegadores móveis dispara "dblclick" também)
+  bubbleEl.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    toggleReaction(m, DEFAULT_REACTION, wrapEl);
+  });
+
+  // Toque e segure para abrir o seletor no celular
+  let pressTimer = null;
+  let longPressFired = false;
+  const clearPressTimer = () => { clearTimeout(pressTimer); pressTimer = null; };
+
+  bubbleEl.addEventListener("touchstart", () => {
+    longPressFired = false;
+    clearPressTimer();
+    pressTimer = setTimeout(() => {
+      longPressFired = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openReactionPicker(m, wrapEl);
+    }, 480);
+  }, { passive: true });
+  bubbleEl.addEventListener("touchend", clearPressTimer);
+  bubbleEl.addEventListener("touchmove", clearPressTimer);
+  bubbleEl.addEventListener("touchcancel", clearPressTimer);
+  bubbleEl.addEventListener("contextmenu", (e) => {
+    if (longPressFired) e.preventDefault();
+  });
+}
+
 function renderMessageNode(m){
   const block = document.createElement("div");
-  block.className = "msg-block " + (m.from === "user" ? "sent" : "received") + (m.grouped ? " grouped" : "");
+  block.className = "msg-block " + (m.from === "user" ? "sent" : "received") + (m.grouped ? " grouped" : "") + (m.reaction ? " has-reaction" : "");
   block.dataset.id = m.id;
 
+  const bubbleWrap = document.createElement("div");
+  bubbleWrap.className = "bubble-wrap";
+
   if (m.type === "file"){
-    block.innerHTML = `
+    bubbleWrap.innerHTML = `
       <div class="bubble">
         <div class="file-row">
           <div class="file-icon"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5L14 3.5z"/></svg></div>
@@ -119,7 +242,7 @@ function renderMessageNode(m){
         <div class="bubble-meta-row"><span>${m.time}</span>${m.from === "user" ? buildTicks() : ""}</div>
       </div>`;
   } else if (m.type === "audio"){
-    block.innerHTML = `
+    bubbleWrap.innerHTML = `
       <div class="bubble">
         <div class="voice-msg">
           <button class="voice-play-btn" type="button" aria-label="Reproduzir áudio">
@@ -135,11 +258,14 @@ function renderMessageNode(m){
         <div class="bubble-meta-row"><span>${m.time}</span>${m.from === "user" ? buildTicks() : ""}</div>
       </div>`;
   } else {
-    block.innerHTML = `
+    bubbleWrap.innerHTML = `
       <div class="bubble">
         <p class="bubble-p"><span class="bubble-text-inline">${linkify(m.text)}</span><span class="bubble-meta"><span>${m.time}</span>${m.from === "user" ? buildTicks() : ""}</span></p>
       </div>`;
   }
+
+  setupReactionUI(m, bubbleWrap);
+  block.appendChild(bubbleWrap);
 
   if (m.buttons && m.buttons.length){
     const qr = document.createElement("div");
@@ -829,56 +955,3 @@ if ("serviceWorker" in navigator){
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
-
-// Melhorias para mobile
-// 1. Detecta se é dispositivo móvel
-function isMobile() {
-  return window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-// 2. Evita zoom automático em inputs no iOS
-document.addEventListener('focusin', function(e) {
-  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
-    if (isMobile()) {
-      // Pequeno delay para o teclado aparecer antes de scrollar
-      setTimeout(() => {
-        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 350);
-    }
-  }
-});
-
-// 3. Ajusta padding do composer quando teclado abre (Android)
-if ('visualViewport' in window) {
-  let lastHeight = window.visualViewport.height;
-  window.visualViewport.addEventListener('resize', () => {
-    const currentHeight = window.visualViewport.height;
-    const composer = document.getElementById('composer');
-    if (composer && isMobile()) {
-      if (currentHeight < lastHeight) {
-        // Teclado abriu - mantém composer visível
-        composer.style.transform = 'translateY(0)';
-      }
-      lastHeight = currentHeight;
-    }
-  });
-}
-
-// 4. Fecha popover de emoji ao rolar (mobile)
-const messagesEl = document.getElementById('messages');
-messagesEl.addEventListener('scroll', () => {
-  const popover = document.getElementById('emoji-popover');
-  if (popover && popover.classList.contains('open')) {
-    popover.classList.remove('open');
-  }
-});
-
-// 5. Ajusta o input ao perder foco (volta ao tamanho normal)
-document.getElementById('msg-input').addEventListener('blur', function() {
-  if (isMobile()) {
-    setTimeout(() => {
-      this.style.height = 'auto';
-      window.scrollTo(0, 0);
-    }, 300);
-  }
-});
